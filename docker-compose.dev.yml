@@ -1,0 +1,24 @@
+# Local development: PostgreSQL only.
+# Usage: docker compose -f docker-compose.dev.yml up -d
+# Then run OxiCloud natively: cargo run
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: oxicloud
+      POSTGRES_PASSWORD: oxicloud
+      POSTGRES_DB: oxicloud
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oxicloud"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata_dev:
