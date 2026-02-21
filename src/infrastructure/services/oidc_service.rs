@@ -267,17 +267,19 @@ impl OidcServicePort for OidcService {
         state: &str,
         nonce: &str,
         pkce_challenge: &str,
+        redirect_uri_override: Option<&str>,
     ) -> Result<String, DomainError> {
         // Fetch or use cached discovery to get the correct authorization_endpoint
         let discovery = self.get_discovery().await?;
         let auth_endpoint = discovery.authorization_endpoint;
 
+        let redirect_uri = redirect_uri_override.unwrap_or(&self.config.redirect_uri);
         let scopes = self.config.scopes.replace(',', " ");
         let url = format!(
             "{}?response_type=code&client_id={}&redirect_uri={}&scope={}&state={}&nonce={}&code_challenge={}&code_challenge_method=S256",
             auth_endpoint,
             urlencoding::encode(&self.config.client_id),
-            urlencoding::encode(&self.config.redirect_uri),
+            urlencoding::encode(redirect_uri),
             urlencoding::encode(&scopes),
             urlencoding::encode(state),
             urlencoding::encode(nonce),
@@ -291,6 +293,7 @@ impl OidcServicePort for OidcService {
         &self,
         code: &str,
         pkce_verifier: &str,
+        redirect_uri_override: Option<&str>,
     ) -> Result<OidcTokenSet, DomainError> {
         let discovery = self.get_discovery().await?;
 
@@ -299,13 +302,15 @@ impl OidcServicePort for OidcService {
             discovery.token_endpoint
         );
 
+        let redirect_uri = redirect_uri_override.unwrap_or(&self.config.redirect_uri);
+
         let resp = self
             .http_client
             .post(&discovery.token_endpoint)
             .form(&[
                 ("grant_type", "authorization_code"),
                 ("code", code),
-                ("redirect_uri", &self.config.redirect_uri),
+                ("redirect_uri", redirect_uri),
                 ("client_id", &self.config.client_id),
                 ("client_secret", &self.config.client_secret),
                 ("code_verifier", pkce_verifier),

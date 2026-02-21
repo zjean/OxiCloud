@@ -139,6 +139,15 @@ impl AdminSettingsService {
                 .get("oidc.provider_name")
                 .cloned()
                 .unwrap_or(d.provider_name),
+            allowed_origins: db
+                .get("oidc.allowed_origins")
+                .map(|v| {
+                    v.split(',')
+                        .map(|s| s.trim().trim_end_matches('/').to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or(d.allowed_origins),
         };
 
         // Env vars override DB

@@ -387,8 +387,24 @@ async fn oidc_providers(State(state): State<Arc<AppState>>) -> Result<impl IntoR
     }))
 }
 
+/// Extract the request origin from headers (X-Forwarded-Host/Host + X-Forwarded-Proto)
+fn extract_request_origin(headers: &HeaderMap) -> Option<String> {
+    let host = headers
+        .get("x-forwarded-host")
+        .and_then(|v| v.to_str().ok())
+        .or_else(|| headers.get("host").and_then(|v| v.to_str().ok()))?;
+    let scheme = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("https");
+    Some(format!("{}://{}", scheme, host.trim_end_matches('/')))
+}
+
 /// GET /api/auth/oidc/authorize — Redirects user to the OIDC provider
-async fn oidc_authorize(State(state): State<Arc<AppState>>) -> Result<impl IntoResponse, AppError> {
+async fn oidc_authorize(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
     let auth_service = state
         .auth_service
         .as_ref()
@@ -404,8 +420,13 @@ async fn oidc_authorize(State(state): State<Arc<AppState>>) -> Result<impl IntoR
         ));
     }
 
+    // Extract request origin for dynamic redirect URI
+    let request_origin = extract_request_origin(&headers);
+
     // Prepare OIDC authorization flow (generates CSRF state, PKCE pair, nonce)
-    let authorize_url = auth_app.prepare_oidc_authorize().await?;
+    let authorize_url = auth_app
+        .prepare_oidc_authorize(request_origin.as_deref())
+        .await?;
 
     tracing::info!("OIDC authorize redirect generated");
 
@@ -434,19 +455,15 @@ async fn oidc_callback(
 
     tracing::info!("OIDC callback received with code");
 
-    // Exchange code, validate state/nonce/PKCE, authenticate user
-    let exchange_code = auth_app
+    // Exchange code, validate state/nonce/PKCE, authenticate user.
+    // Returns the full redirect URL with one-time exchange code (using stored origin).
+    let redirect_url = auth_app
         .oidc_callback(&query.code, &query.state)
         .await
         .map_err(|e| {
             tracing::error!("OIDC callback failed: {}", e);
             AppError::from(e)
         })?;
-
-    // Redirect to frontend with one-time exchange code (NOT raw tokens)
-    let config = auth_app.oidc_config().unwrap();
-    let frontend_url = config.frontend_url.trim_end_matches('/');
-    let redirect_url = format!("{}/?oidc_code={}", frontend_url, exchange_code,);
 
     tracing::info!("OIDC login successful, redirecting with exchange code");
 

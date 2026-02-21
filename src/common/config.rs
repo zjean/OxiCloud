@@ -288,6 +288,8 @@ pub struct OidcConfig {
     pub disable_password_login: bool,
     /// OIDC provider display name (shown in UI)
     pub provider_name: String,
+    /// Comma-separated list of allowed origins for dynamic redirect URI
+    pub allowed_origins: Vec<String>,
 }
 
 impl Default for OidcConfig {
@@ -304,6 +306,7 @@ impl Default for OidcConfig {
             admin_groups: String::new(),
             disable_password_login: false,
             provider_name: "SSO".to_string(),
+            allowed_origins: Vec::new(),
         }
     }
 }
@@ -345,6 +348,13 @@ impl OidcConfig {
         }
         if let Ok(v) = env::var("OXICLOUD_OIDC_PROVIDER_NAME") {
             cfg.provider_name = v;
+        }
+        if let Ok(v) = env::var("OXICLOUD_OIDC_ALLOWED_ORIGINS") {
+            cfg.allowed_origins = v
+                .split(',')
+                .map(|s| s.trim().trim_end_matches('/').to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
         }
         cfg
     }
@@ -599,6 +609,13 @@ impl AppConfig {
         }
         if let Ok(v) = env::var("OXICLOUD_OIDC_PROVIDER_NAME") {
             config.oidc.provider_name = v;
+        }
+        if let Ok(v) = env::var("OXICLOUD_OIDC_ALLOWED_ORIGINS") {
+            config.oidc.allowed_origins = v
+                .split(',')
+                .map(|s| s.trim().trim_end_matches('/').to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
         }
 
         // Validate OIDC config when enabled

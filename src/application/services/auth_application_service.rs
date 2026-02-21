@@ -27,6 +27,7 @@ struct PendingOidcFlow {
     created_at: Instant,
     pkce_verifier: String,
     nonce: String,
+    redirect_uri_origin: String,
 }
 
 /// Tracks a pending one-time token exchange after successful OIDC callback
@@ -866,9 +867,62 @@ impl AuthApplicationService {
     // OIDC Methods
     // ========================================================================
 
+    /// Resolve the redirect URI from the request origin, validated against allowed_origins.
+    fn resolve_redirect_uri(
+        &self,
+        request_origin: Option<&str>,
+    ) -> Result<(String, String), DomainError> {
+        let oidc_state = self.oidc.read().unwrap();
+        let config = oidc_state.config.as_ref().ok_or_else(|| {
+            DomainError::new(
+                ErrorKind::InternalError,
+                "OIDC",
+                "OIDC config not available",
+            )
+        })?;
+
+        if config.allowed_origins.is_empty() {
+            // No whitelist configured -- use default redirect_uri from config
+            let origin = config.frontend_url.trim_end_matches('/').to_string();
+            let redirect_uri = config.redirect_uri.clone();
+            return Ok((redirect_uri, origin));
+        }
+
+        // Whitelist configured -- validate request origin
+        let origin = request_origin.ok_or_else(|| {
+            DomainError::new(
+                ErrorKind::InvalidInput,
+                "OIDC",
+                "Cannot determine request origin. Set Host or X-Forwarded-Host header.",
+            )
+        })?;
+
+        let origin_trimmed = origin.trim_end_matches('/');
+        if !config
+            .allowed_origins
+            .iter()
+            .any(|ao| ao == origin_trimmed)
+        {
+            return Err(DomainError::new(
+                ErrorKind::AccessDenied,
+                "OIDC",
+                format!(
+                    "Origin '{}' is not in the allowed origins list",
+                    origin_trimmed
+                ),
+            ));
+        }
+
+        let redirect_uri = format!("{}/api/auth/oidc/callback", origin_trimmed);
+        Ok((redirect_uri, origin_trimmed.to_string()))
+    }
+
     /// Prepare the OIDC authorization flow: generates CSRF state, PKCE pair,
     /// nonce, stores them in pending_oidc_flows, and returns the authorize URL.
-    pub async fn prepare_oidc_authorize(&self) -> Result<String, DomainError> {
+    pub async fn prepare_oidc_authorize(
+        &self,
+        request_origin: Option<&str>,
+    ) -> Result<String, DomainError> {
         let oidc = self.oidc_service().ok_or_else(|| {
             DomainError::new(
                 ErrorKind::InternalError,
@@ -898,6 +952,9 @@ impl AuthApplicationService {
             base64_url_encode(&hash)
         };
 
+        // Resolve redirect URI origin
+        let (redirect_uri, resolved_origin) = self.resolve_redirect_uri(request_origin)?;
+
         // Store pending flow
         {
             let mut flows = self.pending_oidc_flows.lock().unwrap();
@@ -911,13 +968,14 @@ impl AuthApplicationService {
                     created_at: now,
                     pkce_verifier,
                     nonce: nonce.clone(),
+                    redirect_uri_origin: resolved_origin,
                 },
             );
         }
 
         // Build authorization URL with state, nonce, and PKCE challenge
         let authorize_url = oidc
-            .get_authorize_url(&state_token, &nonce, &pkce_challenge)
+            .get_authorize_url(&state_token, &nonce, &pkce_challenge, Some(&redirect_uri))
             .await?;
 
         tracing::info!(
@@ -930,10 +988,10 @@ impl AuthApplicationService {
 
     /// Handle the OIDC callback: validate CSRF state, exchange code with PKCE,
     /// validate ID token nonce, find or create user (JIT provisioning),
-    /// issue internal tokens, and return a one-time exchange code.
+    /// issue internal tokens, and return a redirect URL with a one-time exchange code.
     pub async fn oidc_callback(&self, code: &str, state: &str) -> Result<String, DomainError> {
-        // 0. Validate CSRF state and retrieve PKCE verifier + nonce
-        let (pkce_verifier, nonce) = {
+        // 0. Validate CSRF state and retrieve PKCE verifier + nonce + stored origin
+        let (pkce_verifier, nonce, redirect_uri_origin) = {
             let mut flows = self.pending_oidc_flows.lock().unwrap();
             let flow = flows.remove(state).ok_or_else(|| {
                 tracing::warn!("OIDC callback with invalid/expired state token");
@@ -953,7 +1011,11 @@ impl AuthApplicationService {
                 ));
             }
 
-            (flow.pkce_verifier, flow.nonce)
+            (
+                flow.pkce_verifier,
+                flow.nonce,
+                flow.redirect_uri_origin,
+            )
         };
 
         // Clone the Arc and config out of the RwLock so we don't hold the lock across await points
@@ -977,7 +1039,10 @@ impl AuthApplicationService {
         };
 
         // 1. Exchange authorization code for tokens (with PKCE verifier)
-        let token_set = oidc.exchange_code(code, &pkce_verifier).await?;
+        let redirect_uri = format!("{}/api/auth/oidc/callback", redirect_uri_origin);
+        let token_set = oidc
+            .exchange_code(code, &pkce_verifier, Some(&redirect_uri))
+            .await?;
 
         // 2. Validate ID token and extract claims (with nonce verification)
         let claims = oidc
@@ -1159,7 +1224,11 @@ impl AuthApplicationService {
 
         tracing::info!("OIDC login successful, one-time exchange code generated");
 
-        Ok(exchange_code)
+        // Build redirect URL using the stored origin (not config.frontend_url)
+        let frontend_url = redirect_uri_origin.trim_end_matches('/');
+        let redirect_url = format!("{}/?oidc_code={}", frontend_url, exchange_code);
+
+        Ok(redirect_url)
     }
 
     /// Exchange a one-time code for the authentication tokens.
