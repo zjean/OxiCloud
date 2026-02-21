@@ -193,10 +193,7 @@ impl AdminSettingsService {
                     .allowed_origins
                     .iter()
                     .map(|origin| {
-                        format!(
-                            "{}/api/auth/oidc/callback",
-                            origin.trim_end_matches('/')
-                        )
+                        format!("{}/api/auth/oidc/callback", origin.trim_end_matches('/'))
                     })
                     .collect()
             },

@@ -898,11 +898,7 @@ impl AuthApplicationService {
         })?;
 
         let origin_trimmed = origin.trim_end_matches('/');
-        if !config
-            .allowed_origins
-            .iter()
-            .any(|ao| ao == origin_trimmed)
-        {
+        if !config.allowed_origins.iter().any(|ao| ao == origin_trimmed) {
             return Err(DomainError::new(
                 ErrorKind::AccessDenied,
                 "OIDC",
@@ -1011,11 +1007,7 @@ impl AuthApplicationService {
                 ));
             }
 
-            (
-                flow.pkce_verifier,
-                flow.nonce,
-                flow.redirect_uri_origin,
-            )
+            (flow.pkce_verifier, flow.nonce, flow.redirect_uri_origin)
         };
 
         // Clone the Arc and config out of the RwLock so we don't hold the lock across await points
