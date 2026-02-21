@@ -317,6 +317,10 @@ struct SystemStatus {
     admin_count: i64,
     /// Whether registration is allowed (only if admin exists)
     registration_allowed: bool,
+    /// Whether OIDC authentication is enabled
+    oidc_enabled: bool,
+    /// Whether password-based login is enabled
+    password_login_enabled: bool,
 }
 
 async fn get_system_status(
@@ -328,22 +332,24 @@ async fn get_system_status(
         .ok_or_else(|| AppError::internal_error("Authentication service not configured"))?;
 
     // Count admin users to determine if system is initialized
-    let admin_count = auth_service
-        .auth_application_service
-        .count_admin_users()
-        .await
-        .unwrap_or(0);
+    let auth_app = &auth_service.auth_application_service;
+    let admin_count = auth_app.count_admin_users().await.unwrap_or(0);
+    let oidc_enabled = auth_app.oidc_enabled();
+    let password_login_enabled = !auth_app.password_login_disabled();
 
     let status = SystemStatus {
         initialized: admin_count > 0,
         admin_count,
         registration_allowed: admin_count > 0, // Only allow registration if admin exists
+        oidc_enabled,
+        password_login_enabled,
     };
 
     tracing::info!(
-        "System status check: initialized={}, admin_count={}",
+        "System status check: initialized={}, admin_count={}, oidc={}",
         status.initialized,
-        status.admin_count
+        status.admin_count,
+        status.oidc_enabled
     );
 
     Ok((StatusCode::OK, Json(status)))
