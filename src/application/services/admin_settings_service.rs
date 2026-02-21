@@ -57,6 +57,7 @@ impl AdminSettingsService {
                 "disable_password_login",
             ),
             ("OXICLOUD_OIDC_PROVIDER_NAME", "provider_name"),
+            ("OXICLOUD_OIDC_ALLOWED_ORIGINS", "allowed_origins"),
         ];
         for (env_key, field_name) in &vars {
             if std::env::var(env_key).is_ok() {
@@ -101,6 +102,9 @@ impl AdminSettingsService {
         }
         if std::env::var("OXICLOUD_OIDC_PROVIDER_NAME").is_ok() {
             config.provider_name = e.provider_name.clone();
+        }
+        if std::env::var("OXICLOUD_OIDC_ALLOWED_ORIGINS").is_ok() {
+            config.allowed_origins = e.allowed_origins.clone();
         }
     }
 
@@ -181,6 +185,21 @@ impl AdminSettingsService {
             disable_password_login: effective.disable_password_login,
             provider_name: effective.provider_name,
             callback_url: effective.redirect_uri.clone(),
+            allowed_origins: effective.allowed_origins.clone(),
+            callback_urls: if effective.allowed_origins.is_empty() {
+                vec![effective.redirect_uri.clone()]
+            } else {
+                effective
+                    .allowed_origins
+                    .iter()
+                    .map(|origin| {
+                        format!(
+                            "{}/api/auth/oidc/callback",
+                            origin.trim_end_matches('/')
+                        )
+                    })
+                    .collect()
+            },
             env_overrides: self.get_env_overrides(),
         })
     }
@@ -240,6 +259,11 @@ impl AdminSettingsService {
         if let Some(ref v) = dto.provider_name {
             self.settings_repo
                 .set("oidc.provider_name", v, cat, false, by)
+                .await?;
+        }
+        if let Some(ref v) = dto.allowed_origins {
+            self.settings_repo
+                .set("oidc.allowed_origins", v, cat, false, by)
                 .await?;
         }
 

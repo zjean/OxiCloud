@@ -376,6 +376,16 @@ async function init() {
       if (s.disable_password_login) showElement('password-warning', 'flex');
       else hideElement('password-warning');
       document.getElementById('callback-url').textContent = s.callback_url;
+      // Show allowed origins and callback URLs
+      if (s.allowed_origins && s.allowed_origins.length > 0) {
+        const originsEl = document.getElementById('allowed-origins-list');
+        if (originsEl) {
+          originsEl.innerHTML = s.callback_urls.map(url =>
+            '<div class="callback-url-item"><code>' + url + '</code></div>'
+          ).join('');
+          showElement('allowed-origins-section');
+        }
+      }
       if (s.client_secret_set) showElement('secret-hint');
       (s.env_overrides || []).forEach(field => {
         const badge = document.getElementById('badge-' + field);

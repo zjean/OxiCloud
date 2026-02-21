@@ -145,6 +145,11 @@
             <label>Callback URL <small class="small-muted">(register in your IdP)</small></label>
             <div class="readonly-field"><span id="callback-url">—</span><button onclick="copyCallback()" title="Copy"><i class="fas fa-copy"></i></button></div>
           </div>
+          <div id="allowed-origins-section" class="hidden">
+            <label>Allowed Callback URLs <span id="badge-allowed_origins"></span></label>
+            <div id="allowed-origins-list" class="callback-urls-list"></div>
+            <small>Derived from OXICLOUD_OIDC_ALLOWED_ORIGINS environment variable</small>
+          </div>
           <details>
             <summary><i class="fas fa-sliders-h summary-icon-right"></i> Advanced Settings</summary>
             <div class="form-group">

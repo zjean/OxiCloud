@@ -19,6 +19,10 @@ pub struct OidcSettingsDto {
     pub provider_name: String,
     /// Auto-generated callback URL the admin must register in their IdP
     pub callback_url: String,
+    /// Allowed origins for dynamic redirect URI (if configured)
+    pub allowed_origins: Vec<String>,
+    /// All callback URLs derived from allowed_origins (for display)
+    pub callback_urls: Vec<String>,
     /// Field names overridden by environment variables (read-only in UI)
     pub env_overrides: Vec<String>,
 }
@@ -36,6 +40,7 @@ pub struct SaveOidcSettingsDto {
     pub admin_groups: Option<String>,
     pub disable_password_login: Option<bool>,
     pub provider_name: Option<String>,
+    pub allowed_origins: Option<String>,
 }
 
 /// Request body for testing OIDC discovery
