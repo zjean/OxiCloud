@@ -274,7 +274,18 @@
                 
                 <button type="submit" class="auth-button" data-i18n="auth.create_admin">Create administrator</button>
             </form>
-            
+
+            <!-- OIDC setup section (shown when OIDC is enabled on uninitialized system) -->
+            <div id="oidc-setup-section" style="display: none;">
+                <p class="auth-subtitle" style="margin-bottom: 1.5rem;">
+                    Sign in with your identity provider to set up the first admin account.
+                </p>
+                <button type="button" class="auth-button auth-button-oidc" id="oidc-setup-btn">
+                    <i class="fas fa-key"></i>
+                    <span>Sign in with SSO</span>
+                </button>
+            </div>
+
             <div class="auth-toggle">
                 <span data-i18n="auth.back_to_login">Already configured?</span>
                 <span class="auth-toggle-link" id="back-to-login" data-i18n="auth.login">Log in</span>

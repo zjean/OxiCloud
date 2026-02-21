@@ -280,11 +280,19 @@ function initLanguageSelector() {
         console.log('System status after language selection:', systemStatus);
         
         if (!systemStatus.initialized) {
-            console.log('No admin exists, showing admin setup panel');
+            console.log('No admin exists');
             document.getElementById('login-panel').style.display = 'none';
             document.getElementById('register-panel').style.display = 'none';
             document.getElementById('admin-setup-panel').style.display = 'block';
-            
+
+            if (systemStatus.oidc_enabled) {
+                const setupForm = document.getElementById('admin-setup-form');
+                if (setupForm) setupForm.style.display = 'none';
+                const oidcSetupSection = document.getElementById('oidc-setup-section');
+                if (oidcSetupSection) oidcSetupSection.style.display = 'block';
+                await configureOidcSetupButton();
+            }
+
             const backToLoginLink = document.getElementById('back-to-login');
             if (backToLoginLink) {
                 backToLoginLink.parentElement.style.display = 'none';
@@ -340,14 +348,23 @@ async function showInitialPanel() {
     console.log('System status:', systemStatus);
     
     if (!systemStatus.initialized) {
-        // No admin exists - this is a fresh install, show admin setup
-        console.log('Fresh install detected - showing admin setup');
         languagePanel.style.display = 'none';
         loginPanel.style.display = 'none';
         registerPanel.style.display = 'none';
         adminSetupPanel.style.display = 'block';
-        
-        // Hide the "Already set up? Sign in" link since there's no admin yet
+
+        if (systemStatus.oidc_enabled) {
+            // OIDC is enabled — show OIDC login instead of admin registration form
+            console.log('Fresh install with OIDC enabled — showing OIDC setup');
+            const setupForm = document.getElementById('admin-setup-form');
+            if (setupForm) setupForm.style.display = 'none';
+            const oidcSetupSection = document.getElementById('oidc-setup-section');
+            if (oidcSetupSection) oidcSetupSection.style.display = 'block';
+            await configureOidcSetupButton();
+        } else {
+            console.log('Fresh install detected — showing admin setup');
+        }
+
         const backToLoginLink = document.getElementById('back-to-login');
         if (backToLoginLink) {
             backToLoginLink.parentElement.style.display = 'none';
@@ -414,6 +431,33 @@ async function configureOidcLoginUI() {
         }
     } catch (err) {
         console.error('Failed to fetch OIDC provider info:', err);
+    }
+}
+
+// Configure OIDC button on the admin setup panel for fresh installs
+async function configureOidcSetupButton() {
+    try {
+        const response = await fetch('/api/auth/oidc/providers');
+        if (!response.ok) return;
+        const oidcInfo = await response.json();
+        if (!oidcInfo.enabled) return;
+
+        const btn = document.getElementById('oidc-setup-btn');
+        if (!btn) return;
+
+        const btnText = btn.querySelector('span');
+        if (btnText && oidcInfo.provider_name) {
+            const template = (window.i18n && window.i18n.t)
+                ? window.i18n.t('auth.sso_login_provider')
+                : 'Sign in with {{provider}}';
+            btnText.textContent = template.replace('{{provider}}', oidcInfo.provider_name);
+        }
+
+        btn.addEventListener('click', () => {
+            window.location.href = oidcInfo.authorize_endpoint;
+        });
+    } catch (err) {
+        console.error('Failed to configure OIDC setup button:', err);
     }
 }
 
