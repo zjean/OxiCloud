@@ -1,6 +1,6 @@
 use axum::{
     body::{self, Body},
-    http::{header, HeaderName, Request, StatusCode},
+    http::{HeaderName, Request, StatusCode, header},
     response::Response,
 };
 use bytes::Buf;
@@ -102,7 +102,7 @@ async fn handle_propfind(
     // Parse the PROPFIND XML body (or assume allprop if empty).
     let body_bytes = body::to_bytes(req.into_body(), 64 * 1024)
         .await
-        .map_err(|e| AppError::bad_request(&format!("Failed to read body: {}", e)))?;
+        .map_err(|e| AppError::bad_request(format!("Failed to read body: {}", e)))?;
 
     let propfind = if body_bytes.is_empty() {
         PropFindRequest {
@@ -110,7 +110,7 @@ async fn handle_propfind(
         }
     } else {
         WebDavAdapter::parse_propfind(body_bytes.reader())
-            .map_err(|e| AppError::bad_request(&format!("Invalid PROPFIND XML: {}", e)))?
+            .map_err(|e| AppError::bad_request(format!("Invalid PROPFIND XML: {}", e)))?
     };
 
     let internal_path = nc_to_internal_path(&user.username, subpath);
@@ -153,7 +153,7 @@ async fn handle_propfind(
             file_id_svc,
         )
         .await
-        .map_err(|e| AppError::internal_error(&format!("XML generation failed: {}", e)))?;
+        .map_err(|e| AppError::internal_error(format!("XML generation failed: {}", e)))?;
 
         return Ok(Response::builder()
             .status(StatusCode::MULTI_STATUS)
@@ -181,7 +181,7 @@ async fn handle_propfind(
             file_id_svc,
         )
         .await
-        .map_err(|e| AppError::internal_error(&format!("XML generation failed: {}", e)))?;
+        .map_err(|e| AppError::internal_error(format!("XML generation failed: {}", e)))?;
 
         return Ok(Response::builder()
             .status(StatusCode::MULTI_STATUS)
@@ -211,7 +211,7 @@ async fn handle_get(
     let content = file_service
         .get_file_content(&file.id)
         .await
-        .map_err(|e| AppError::internal_error(&format!("Failed to read file: {}", e)))?;
+        .map_err(|e| AppError::internal_error(format!("Failed to read file: {}", e)))?;
 
     let modified_at = chrono::DateTime::<Utc>::from_timestamp(file.modified_at as i64, 0)
         .unwrap_or_else(Utc::now);
@@ -275,7 +275,7 @@ async fn handle_put(
 
     let body_bytes = body::to_bytes(req.into_body(), 512 * 1024 * 1024) // 512 MB limit
         .await
-        .map_err(|e| AppError::bad_request(&format!("Failed to read body: {}", e)))?;
+        .map_err(|e| AppError::bad_request(format!("Failed to read body: {}", e)))?;
 
     // Check if the file already exists (update vs create).
     let existing = file_service.get_file_by_path(&internal_path).await;
@@ -285,7 +285,7 @@ async fn handle_put(
         upload_service
             .update_file(&internal_path, &body_bytes)
             .await
-            .map_err(|e| AppError::internal_error(&format!("Failed to update file: {}", e)))?;
+            .map_err(|e| AppError::internal_error(format!("Failed to update file: {}", e)))?;
 
         // Re-fetch for etag.
         if let Ok(updated) = file_service.get_file_by_path(&internal_path).await {
@@ -313,7 +313,7 @@ async fn handle_put(
     let file_dto = upload_service
         .create_file(&parent_internal, filename, &body_bytes, &content_type)
         .await
-        .map_err(|e| AppError::internal_error(&format!("Failed to create file: {}", e)))?;
+        .map_err(|e| AppError::internal_error(format!("Failed to create file: {}", e)))?;
 
     Ok(Response::builder()
         .status(StatusCode::CREATED)
@@ -355,7 +355,7 @@ async fn handle_mkcol(
     folder_service
         .create_folder(dto)
         .await
-        .map_err(|e| AppError::internal_error(&format!("Failed to create folder: {}", e)))?;
+        .map_err(|e| AppError::internal_error(format!("Failed to create folder: {}", e)))?;
 
     Ok(Response::builder()
         .status(StatusCode::CREATED)
@@ -380,7 +380,7 @@ async fn handle_delete(
         folder_service
             .delete_folder(&folder.id, &user.id)
             .await
-            .map_err(|e| AppError::internal_error(&format!("Failed to delete folder: {}", e)))?;
+            .map_err(|e| AppError::internal_error(format!("Failed to delete folder: {}", e)))?;
 
         return Ok(Response::builder()
             .status(StatusCode::NO_CONTENT)
@@ -393,7 +393,7 @@ async fn handle_delete(
         file_mgmt
             .delete_file(&file.id)
             .await
-            .map_err(|e| AppError::internal_error(&format!("Failed to delete file: {}", e)))?;
+            .map_err(|e| AppError::internal_error(format!("Failed to delete file: {}", e)))?;
 
         return Ok(Response::builder()
             .status(StatusCode::NO_CONTENT)
@@ -447,7 +447,7 @@ async fn handle_move(
             file_mgmt
                 .rename_file(&file.id, dest_name)
                 .await
-                .map_err(|e| AppError::internal_error(&format!("Rename failed: {}", e)))?;
+                .map_err(|e| AppError::internal_error(format!("Rename failed: {}", e)))?;
         } else {
             // Different parent → move.
             let dest_parent = folder_service
@@ -458,14 +458,14 @@ async fn handle_move(
             file_mgmt
                 .move_file(&file.id, Some(dest_parent.id.clone()))
                 .await
-                .map_err(|e| AppError::internal_error(&format!("Move failed: {}", e)))?;
+                .map_err(|e| AppError::internal_error(format!("Move failed: {}", e)))?;
 
             // If the filename changed too, rename after move.
             if file.name != dest_name {
                 file_mgmt
                     .rename_file(&file.id, dest_name)
                     .await
-                    .map_err(|e| AppError::internal_error(&format!("Rename failed: {}", e)))?;
+                    .map_err(|e| AppError::internal_error(format!("Rename failed: {}", e)))?;
             }
         }
 
@@ -500,7 +500,7 @@ async fn handle_move(
                     &user.id,
                 )
                 .await
-                .map_err(|e| AppError::internal_error(&format!("Rename failed: {}", e)))?;
+                .map_err(|e| AppError::internal_error(format!("Rename failed: {}", e)))?;
         } else {
             // Different parent → move.
             let dest_parent = folder_service
@@ -518,7 +518,7 @@ async fn handle_move(
                     &user.id,
                 )
                 .await
-                .map_err(|e| AppError::internal_error(&format!("Move failed: {}", e)))?;
+                .map_err(|e| AppError::internal_error(format!("Move failed: {}", e)))?;
 
             // If the name changed too, rename.
             if folder.name != dest_name {
@@ -532,7 +532,7 @@ async fn handle_move(
                         &user.id,
                     )
                     .await
-                    .map_err(|e| AppError::internal_error(&format!("Rename failed: {}", e)))?;
+                    .map_err(|e| AppError::internal_error(format!("Rename failed: {}", e)))?;
             }
         }
 
@@ -556,9 +556,9 @@ fn extract_nc_subpath_from_dest(dest: &str, username: &str) -> Option<String> {
     };
     let decoded = urlencoding::decode(path).ok()?;
     let decoded = decoded.trim_end_matches('/');
-    decoded.strip_prefix(prefix.trim_end_matches('/')).map(|s| {
-        s.trim_start_matches('/').to_string()
-    })
+    decoded
+        .strip_prefix(prefix.trim_end_matches('/'))
+        .map(|s| s.trim_start_matches('/').to_string())
 }
 
 // ────────────── Nextcloud PROPFIND XML Generation ──────────────
@@ -568,6 +568,7 @@ use crate::application::dtos::folder_dto::FolderDto;
 use crate::application::services::nextcloud_file_id_service::NextcloudFileIdService;
 
 /// Generate a complete Nextcloud-compatible multistatus XML response.
+#[allow(clippy::too_many_arguments)]
 async fn write_nc_multistatus<W: std::io::Write>(
     writer: W,
     folder: Option<&FolderDto>,
@@ -586,7 +587,8 @@ async fn write_nc_multistatus<W: std::io::Write>(
     ms.push_attribute(("xmlns:d", "DAV:"));
     ms.push_attribute(("xmlns:oc", "http://owncloud.org/ns"));
     ms.push_attribute(("xmlns:nc", "http://nextcloud.org/ns"));
-    xml.write_event(Event::Start(ms)).map_err(|e| e.to_string())?;
+    xml.write_event(Event::Start(ms))
+        .map_err(|e| e.to_string())?;
 
     // Current folder entry.
     if let Some(f) = folder {
@@ -723,8 +725,8 @@ fn write_file_response<W: std::io::Write>(
     write_text_element(xml, "d:getcontenttype", &file.mime_type)?;
     write_text_element(xml, "d:getcontentlength", &file.size.to_string())?;
 
-    let created_at = chrono::DateTime::<Utc>::from_timestamp(file.created_at as i64, 0)
-        .unwrap_or_else(Utc::now);
+    let created_at =
+        chrono::DateTime::<Utc>::from_timestamp(file.created_at as i64, 0).unwrap_or_else(Utc::now);
     let modified_at = chrono::DateTime::<Utc>::from_timestamp(file.modified_at as i64, 0)
         .unwrap_or_else(Utc::now);
 

@@ -155,7 +155,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         use oxicloud::interfaces::nextcloud::routes::nextcloud_routes_with_state;
         let nc_state = Arc::new(app_state.clone());
         Some(nextcloud_routes_with_state(nc_state))
-        } else {
+    } else {
         None
     };
 

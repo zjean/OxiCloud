@@ -721,8 +721,9 @@ impl AppConfig {
             config.nextcloud.enabled = v.parse::<bool>().unwrap_or(false);
         }
         if let Ok(v) = env::var("OXICLOUD_NEXTCLOUD_INSTANCE_ID") {
-            if !v.trim().is_empty() {
-                config.nextcloud.instance_id = v.trim().to_string();
+            let trimmed = v.trim();
+            if !trimmed.is_empty() {
+                config.nextcloud.instance_id = trimmed.to_string();
             }
         }
 

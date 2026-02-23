@@ -51,11 +51,7 @@ impl NextcloudAppPasswordService {
         Ok(password)
     }
 
-    pub async fn validate(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> Result<Option<CurrentUser>> {
+    pub async fn validate(&self, username: &str, password: &str) -> Result<Option<CurrentUser>> {
         let (repo, hasher, users) = self.ensure()?;
 
         let user = match users.get_user_by_username(username).await {
@@ -73,9 +69,7 @@ impl NextcloudAppPasswordService {
             Err(_) => return Ok(None),
         };
 
-        let candidates = repo
-            .list_by_user_prefix(user.id(), &token_prefix)
-            .await?;
+        let candidates = repo.list_by_user_prefix(user.id(), &token_prefix).await?;
 
         for record in candidates {
             let is_valid = hasher.verify_password(&normalized, &record.password_hash)?;
@@ -123,6 +117,7 @@ impl NextcloudAppPasswordService {
         Ok(())
     }
 
+    #[allow(clippy::type_complexity)]
     fn ensure(
         &self,
     ) -> std::result::Result<
@@ -133,10 +128,9 @@ impl NextcloudAppPasswordService {
         ),
         DomainError,
     > {
-        let repo = self
-            .repo
-            .as_ref()
-            .ok_or_else(|| DomainError::internal_error("Nextcloud", "AppPassword repo not ready"))?;
+        let repo = self.repo.as_ref().ok_or_else(|| {
+            DomainError::internal_error("Nextcloud", "AppPassword repo not ready")
+        })?;
         let hasher = self
             .hasher
             .as_ref()
@@ -183,4 +177,53 @@ fn token_prefix(normalized: &str) -> Result<String> {
         ));
     }
     Ok(normalized[..APP_PASSWORD_PREFIX_LEN].to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_app_password_format() {
+        let password = generate_app_password();
+        let groups: Vec<&str> = password.split('-').collect();
+        assert_eq!(groups.len(), APP_PASSWORD_GROUPS);
+        for group in &groups {
+            assert_eq!(group.len(), APP_PASSWORD_GROUP_LEN);
+            assert!(group.chars().all(|c| c.is_ascii_alphanumeric()));
+        }
+    }
+
+    #[test]
+    fn test_normalize_password_strips_dashes_and_whitespace() {
+        let normalized = normalize_password("AB12C-DE34F-GH56I");
+        assert_eq!(normalized, "AB12CDE34FGH56I");
+    }
+
+    #[test]
+    fn test_normalize_password_uppercases() {
+        let normalized = normalize_password("abc-def");
+        assert_eq!(normalized, "ABCDEF");
+    }
+
+    #[test]
+    fn test_token_prefix_extracts_first_8_chars() {
+        let prefix = token_prefix("ABCDEFGHIJKLMNOP").unwrap();
+        assert_eq!(prefix, "ABCDEFGH");
+    }
+
+    #[test]
+    fn test_token_prefix_too_short() {
+        let result = token_prefix("SHORT");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_generated_password_produces_valid_prefix() {
+        let password = generate_app_password();
+        let normalized = normalize_password(&password);
+        let prefix = token_prefix(&normalized);
+        assert!(prefix.is_ok());
+        assert_eq!(prefix.unwrap().len(), APP_PASSWORD_PREFIX_LEN);
+    }
 }

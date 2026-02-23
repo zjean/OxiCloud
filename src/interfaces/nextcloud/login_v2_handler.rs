@@ -29,10 +29,7 @@ pub async fn handle_login_initiate(State(state): State<Arc<AppState>>) -> Respon
     .into_response()
 }
 
-pub async fn handle_login_poll(
-    State(state): State<Arc<AppState>>,
-    body: String,
-) -> Response {
+pub async fn handle_login_poll(State(state): State<Arc<AppState>>, body: String) -> Response {
     let nextcloud = match state.nextcloud.as_ref() {
         Some(nextcloud) => nextcloud,
         None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
@@ -135,12 +132,9 @@ pub async fn handle_login_submit(
     };
 
     let base_url = state.core.config.base_url();
-    nextcloud.login_flow.complete(
-        &token,
-        &current_user.username,
-        &base_url,
-        &app_password,
-    );
+    nextcloud
+        .login_flow
+        .complete(&token, &current_user.username, &base_url, &app_password);
 
     Html(
         "<html><body><h2>Login successful</h2><p>You can close this window and return to the app.</p></body></html>"
@@ -150,11 +144,8 @@ pub async fn handle_login_submit(
 }
 
 fn login_failed_response(_err: DomainError) -> Response {
-    Html(
-        "<html><body><h2>Login failed</h2><p>Invalid credentials.</p></body></html>"
-            .to_string(),
-    )
-    .into_response()
+    Html("<html><body><h2>Login failed</h2><p>Invalid credentials.</p></body></html>".to_string())
+        .into_response()
 }
 
 fn parse_form(body: &str) -> HashMap<String, String> {

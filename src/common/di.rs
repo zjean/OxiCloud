@@ -522,11 +522,13 @@ impl AppServiceFactory {
                 crate::infrastructure::repositories::pg::AppPasswordRepository::new(pool.clone()),
             );
             let user_repo: Arc<dyn crate::application::ports::auth_ports::UserStoragePort> =
-                Arc::new(crate::infrastructure::repositories::pg::UserPgRepository::new(
-                    pool.clone(),
-                ));
+                Arc::new(
+                    crate::infrastructure::repositories::pg::UserPgRepository::new(pool.clone()),
+                );
             let hasher: Arc<dyn crate::application::ports::auth_ports::PasswordHasherPort> =
-                Arc::new(crate::infrastructure::services::password_hasher::Argon2PasswordHasher::new());
+                Arc::new(
+                    crate::infrastructure::services::password_hasher::Argon2PasswordHasher::new(),
+                );
 
             let app_passwords = Arc::new(NextcloudAppPasswordService::new(
                 app_password_repo,

@@ -1,6 +1,6 @@
 use axum::{
     extract::{Request, State},
-    http::{header, HeaderMap, StatusCode},
+    http::{HeaderMap, StatusCode, header},
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -47,8 +47,8 @@ pub async fn basic_auth_middleware(
         .and_then(|value| value.to_str().ok())
         .ok_or(NextcloudAuthError::Unauthorized)?;
 
-    let (username, password) = parse_basic_auth(auth_header)
-        .ok_or(NextcloudAuthError::Unauthorized)?;
+    let (username, password) =
+        parse_basic_auth(auth_header).ok_or(NextcloudAuthError::Unauthorized)?;
 
     let nextcloud = state
         .nextcloud
@@ -89,4 +89,54 @@ fn parse_basic_auth(header_value: &str) -> Option<(String, String)> {
     let (user, pass) = decoded.split_once(':')?;
 
     Some((user.to_string(), pass.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_valid_basic_auth() {
+        let encoded = base64::engine::general_purpose::STANDARD.encode("alice:secret123");
+        let header = format!("Basic {}", encoded);
+        let (user, pass) = parse_basic_auth(&header).expect("should parse");
+        assert_eq!(user, "alice");
+        assert_eq!(pass, "secret123");
+    }
+
+    #[test]
+    fn test_parse_basic_auth_with_colon_in_password() {
+        let encoded = base64::engine::general_purpose::STANDARD.encode("user:pass:with:colons");
+        let header = format!("Basic {}", encoded);
+        let (user, pass) = parse_basic_auth(&header).expect("should parse");
+        assert_eq!(user, "user");
+        assert_eq!(pass, "pass:with:colons");
+    }
+
+    #[test]
+    fn test_parse_basic_auth_bearer_scheme_rejected() {
+        let encoded = base64::engine::general_purpose::STANDARD.encode("user:pass");
+        let header = format!("Bearer {}", encoded);
+        assert!(parse_basic_auth(&header).is_none());
+    }
+
+    #[test]
+    fn test_parse_basic_auth_missing_colon() {
+        let encoded = base64::engine::general_purpose::STANDARD.encode("nocolon");
+        let header = format!("Basic {}", encoded);
+        assert!(parse_basic_auth(&header).is_none());
+    }
+
+    #[test]
+    fn test_parse_basic_auth_invalid_base64() {
+        assert!(parse_basic_auth("Basic not-valid-base64!!!").is_none());
+    }
+
+    #[test]
+    fn test_parse_basic_auth_case_insensitive_scheme() {
+        let encoded = base64::engine::general_purpose::STANDARD.encode("user:pass");
+        let header = format!("BASIC {}", encoded);
+        let result = parse_basic_auth(&header);
+        assert!(result.is_some());
+    }
 }

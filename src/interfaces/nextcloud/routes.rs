@@ -48,17 +48,13 @@ pub fn nextcloud_routes() -> Router<Arc<AppState>> {
         )
         .route(
             "/login/v2/flow/{token}",
-            get(login_v2_handler::handle_login_page)
-                .post(login_v2_handler::handle_login_submit),
+            get(login_v2_handler::handle_login_page).post(login_v2_handler::handle_login_submit),
         )
         .route(
             "/index.php/login/v2/poll",
             post(login_v2_handler::handle_login_poll),
         )
-        .route(
-            "/login/v2/poll",
-            post(login_v2_handler::handle_login_poll),
-        );
+        .route("/login/v2/poll", post(login_v2_handler::handle_login_poll));
 
     // Protected routes — require Basic Auth via app passwords.
     let protected = Router::new()
@@ -72,10 +68,7 @@ pub fn nextcloud_routes() -> Router<Arc<AppState>> {
             get(ocs_handler::handle_capabilities_v2),
         )
         // OCS user info
-        .route(
-            "/ocs/v2.php/cloud/user",
-            get(ocs_handler::handle_user_info),
-        )
+        .route("/ocs/v2.php/cloud/user", get(ocs_handler::handle_user_info))
         // App password revocation
         .route(
             "/ocs/v2.php/core/apppassword",
@@ -107,10 +100,7 @@ pub fn nextcloud_routes() -> Router<Arc<AppState>> {
             any(handle_dav_uploads_root),
         )
         // Legacy WebDAV redirect
-        .route(
-            "/remote.php/webdav/{*subpath}",
-            any(handle_legacy_webdav),
-        )
+        .route("/remote.php/webdav/{*subpath}", any(handle_legacy_webdav))
         .route("/remote.php/webdav/", any(handle_legacy_webdav_root))
         .route("/remote.php/webdav", any(handle_legacy_webdav_root))
         .layer(middleware::from_fn_with_state(
@@ -137,17 +127,13 @@ pub fn nextcloud_routes_with_state(state: Arc<AppState>) -> Router<Arc<AppState>
         )
         .route(
             "/login/v2/flow/{token}",
-            get(login_v2_handler::handle_login_page)
-                .post(login_v2_handler::handle_login_submit),
+            get(login_v2_handler::handle_login_page).post(login_v2_handler::handle_login_submit),
         )
         .route(
             "/index.php/login/v2/poll",
             post(login_v2_handler::handle_login_poll),
         )
-        .route(
-            "/login/v2/poll",
-            post(login_v2_handler::handle_login_poll),
-        );
+        .route("/login/v2/poll", post(login_v2_handler::handle_login_poll));
 
     // Protected routes — require Basic Auth via app passwords.
     let protected = Router::new()
@@ -159,10 +145,7 @@ pub fn nextcloud_routes_with_state(state: Arc<AppState>) -> Router<Arc<AppState>
             "/ocs/v2.php/cloud/capabilities",
             get(ocs_handler::handle_capabilities_v2),
         )
-        .route(
-            "/ocs/v2.php/cloud/user",
-            get(ocs_handler::handle_user_info),
-        )
+        .route("/ocs/v2.php/cloud/user", get(ocs_handler::handle_user_info))
         .route(
             "/ocs/v2.php/core/apppassword",
             delete(ocs_handler::handle_revoke_apppassword),
@@ -189,16 +172,10 @@ pub fn nextcloud_routes_with_state(state: Arc<AppState>) -> Router<Arc<AppState>
             "/remote.php/dav/uploads/{user}/{upload_id}",
             any(handle_dav_uploads_root),
         )
-        .route(
-            "/remote.php/webdav/{*subpath}",
-            any(handle_legacy_webdav),
-        )
+        .route("/remote.php/webdav/{*subpath}", any(handle_legacy_webdav))
         .route("/remote.php/webdav/", any(handle_legacy_webdav_root))
         .route("/remote.php/webdav", any(handle_legacy_webdav_root))
-        .layer(middleware::from_fn_with_state(
-            state,
-            basic_auth_middleware,
-        ));
+        .layer(middleware::from_fn_with_state(state, basic_auth_middleware));
 
     Router::new().merge(public).merge(protected)
 }
@@ -250,14 +227,8 @@ async fn handle_dav_uploads_root(
 }
 
 /// Legacy /remote.php/webdav/* — redirect to /remote.php/dav/files/{user}/*
-async fn handle_legacy_webdav(
-    Path(subpath): Path<String>,
-    user_ext: CurrentUser,
-) -> Response {
-    let location = format!(
-        "/remote.php/dav/files/{}/{}",
-        user_ext.username, subpath
-    );
+async fn handle_legacy_webdav(Path(subpath): Path<String>, user_ext: CurrentUser) -> Response {
+    let location = format!("/remote.php/dav/files/{}/{}", user_ext.username, subpath);
     Response::builder()
         .status(StatusCode::MOVED_PERMANENTLY)
         .header("location", location)

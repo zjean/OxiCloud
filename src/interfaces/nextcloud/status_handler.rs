@@ -1,5 +1,5 @@
-use axum::response::{IntoResponse, Response};
 use axum::Json;
+use axum::response::{IntoResponse, Response};
 use serde_json::json;
 
 pub async fn handle_status() -> Response {

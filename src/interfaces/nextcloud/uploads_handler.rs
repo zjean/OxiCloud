@@ -1,6 +1,6 @@
 use axum::{
     body::{self, Body},
-    http::{header, Request, StatusCode},
+    http::{Request, StatusCode, header},
     response::Response,
 };
 use std::sync::Arc;
@@ -50,7 +50,7 @@ async fn handle_mkcol(
     nc.chunked_uploads
         .create_session(&user.username, upload_id)
         .await
-        .map_err(|e| AppError::internal_error(&format!("Failed to create session: {}", e)))?;
+        .map_err(|e| AppError::internal_error(format!("Failed to create session: {}", e)))?;
 
     Ok(Response::builder()
         .status(StatusCode::CREATED)
@@ -78,12 +78,12 @@ async fn handle_put_chunk(
 
     let body_bytes = body::to_bytes(req.into_body(), 512 * 1024 * 1024)
         .await
-        .map_err(|e| AppError::bad_request(&format!("Failed to read chunk body: {}", e)))?;
+        .map_err(|e| AppError::bad_request(format!("Failed to read chunk body: {}", e)))?;
 
     nc.chunked_uploads
         .store_chunk(&user.username, upload_id, chunk_name, &body_bytes)
         .await
-        .map_err(|e| AppError::internal_error(&format!("Failed to store chunk: {}", e)))?;
+        .map_err(|e| AppError::internal_error(format!("Failed to store chunk: {}", e)))?;
 
     Ok(Response::builder()
         .status(StatusCode::CREATED)
@@ -121,13 +121,17 @@ async fn handle_assemble(
         .chunked_uploads
         .assemble(&user.username, upload_id)
         .await
-        .map_err(|e| AppError::internal_error(&format!("Failed to assemble chunks: {}", e)))?;
+        .map_err(|e| AppError::internal_error(format!("Failed to assemble chunks: {}", e)))?;
 
     // Write assembled file to storage via the upload service.
     let upload_service = &state.applications.file_upload_service;
     let file_service = &state.applications.file_retrieval_service;
 
-    let internal_path = format!("My Folder - {}/{}", user.username, dest_subpath.trim_matches('/'));
+    let internal_path = format!(
+        "My Folder - {}/{}",
+        user.username,
+        dest_subpath.trim_matches('/')
+    );
 
     // Detect content type from file extension.
     let content_type = mime_guess::from_path(&dest_subpath)
@@ -141,26 +145,27 @@ async fn handle_assemble(
         upload_service
             .update_file(&internal_path, &assembled)
             .await
-            .map_err(|e| AppError::internal_error(&format!("Failed to update file: {}", e)))?;
+            .map_err(|e| AppError::internal_error(format!("Failed to update file: {}", e)))?;
     } else {
         let (parent_sub, filename) = match dest_subpath.rsplit_once('/') {
             Some((p, n)) => (p, n),
             None => ("", dest_subpath.as_str()),
         };
-        let parent_internal = format!("My Folder - {}/{}", user.username, parent_sub.trim_matches('/'));
+        let parent_internal = format!(
+            "My Folder - {}/{}",
+            user.username,
+            parent_sub.trim_matches('/')
+        );
         let parent_internal = parent_internal.trim_end_matches('/');
 
         upload_service
             .create_file(parent_internal, filename, &assembled, &content_type)
             .await
-            .map_err(|e| AppError::internal_error(&format!("Failed to create file: {}", e)))?;
+            .map_err(|e| AppError::internal_error(format!("Failed to create file: {}", e)))?;
     }
 
     // Cleanup session.
-    let _ = nc
-        .chunked_uploads
-        .cleanup(&user.username, upload_id)
-        .await;
+    let _ = nc.chunked_uploads.cleanup(&user.username, upload_id).await;
 
     // Return etag if we can fetch the file.
     if let Ok(file) = file_service.get_file_by_path(&internal_path).await {
@@ -191,7 +196,7 @@ async fn handle_abort(
     nc.chunked_uploads
         .cleanup(&user.username, upload_id)
         .await
-        .map_err(|e| AppError::internal_error(&format!("Failed to abort upload: {}", e)))?;
+        .map_err(|e| AppError::internal_error(format!("Failed to abort upload: {}", e)))?;
 
     Ok(Response::builder()
         .status(StatusCode::NO_CONTENT)

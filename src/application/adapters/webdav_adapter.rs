@@ -159,12 +159,7 @@ impl NextcloudPropContext {
         }
     }
 
-    pub fn for_file(
-        file_id: Option<i64>,
-        oc_id: Option<String>,
-        owner: &str,
-        size: u64,
-    ) -> Self {
+    pub fn for_file(file_id: Option<i64>, oc_id: Option<String>, owner: &str, size: u64) -> Self {
         Self {
             file_id,
             oc_id,

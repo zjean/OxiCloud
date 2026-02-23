@@ -46,6 +46,14 @@ impl NextcloudFileIdService {
         &self.instance_id
     }
 
+    #[cfg(test)]
+    pub fn new_test(instance_id: &str) -> Self {
+        Self {
+            repo: None,
+            instance_id: instance_id.to_string(),
+        }
+    }
+
     pub fn ensure_ready(&self) -> Result<()> {
         if self.repo.is_none() {
             return Err(DomainError::new(
@@ -55,5 +63,40 @@ impl NextcloudFileIdService {
             ));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_oc_id_default_instance() {
+        let svc = NextcloudFileIdService::new_stub();
+        assert_eq!(svc.format_oc_id(42), "00000042ocnca");
+    }
+
+    #[test]
+    fn test_format_oc_id_custom_instance() {
+        let svc = NextcloudFileIdService::new_test("myinst");
+        assert_eq!(svc.format_oc_id(1), "00000001myinst");
+    }
+
+    #[test]
+    fn test_format_oc_id_large_number() {
+        let svc = NextcloudFileIdService::new_stub();
+        assert_eq!(svc.format_oc_id(123456789), "123456789ocnca");
+    }
+
+    #[test]
+    fn test_instance_id() {
+        let svc = NextcloudFileIdService::new_stub();
+        assert_eq!(svc.instance_id(), "ocnca");
+    }
+
+    #[test]
+    fn test_ensure_ready_fails_on_stub() {
+        let svc = NextcloudFileIdService::new_stub();
+        assert!(svc.ensure_ready().is_err());
     }
 }

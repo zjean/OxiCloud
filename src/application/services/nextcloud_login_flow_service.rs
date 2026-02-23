@@ -56,7 +56,9 @@ impl NextcloudLoginFlowService {
         let poll_token = random_hex(64);
         let flow_token = random_hex(48);
 
-        state.poll_to_flow.insert(poll_token.clone(), flow_token.clone());
+        state
+            .poll_to_flow
+            .insert(poll_token.clone(), flow_token.clone());
         state.flows.insert(
             flow_token.clone(),
             PendingFlow {
@@ -69,7 +71,11 @@ impl NextcloudLoginFlowService {
         LoginFlowInfo {
             poll_token: poll_token.clone(),
             poll_endpoint: format!("{}/login/v2/poll", base_url.trim_end_matches('/')),
-            login_url: format!("{}/login/v2/flow/{}", base_url.trim_end_matches('/'), flow_token),
+            login_url: format!(
+                "{}/login/v2/flow/{}",
+                base_url.trim_end_matches('/'),
+                flow_token
+            ),
         }
     }
 
@@ -137,9 +143,101 @@ fn prune_expired(state: &mut FlowState, ttl: Duration) {
 }
 
 fn random_hex(len: usize) -> String {
-    let mut bytes = vec![0u8; (len + 1) / 2];
+    let mut bytes = vec![0u8; len.div_ceil(2)];
     rand_core::OsRng.fill_bytes(&mut bytes);
     let mut out = hex::encode(bytes);
     out.truncate(len);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn service() -> NextcloudLoginFlowService {
+        NextcloudLoginFlowService::new(Duration::from_secs(600))
+    }
+
+    #[test]
+    fn test_initiate_returns_valid_tokens() {
+        let svc = service();
+        let info = svc.initiate("https://cloud.example.com");
+
+        assert!(!info.poll_token.is_empty());
+        assert!(
+            info.login_url
+                .starts_with("https://cloud.example.com/login/v2/flow/")
+        );
+        assert_eq!(
+            info.poll_endpoint,
+            "https://cloud.example.com/login/v2/poll"
+        );
+    }
+
+    #[test]
+    fn test_flow_exists_after_initiate() {
+        let svc = service();
+        let info = svc.initiate("https://cloud.example.com");
+
+        // Extract flow token from login URL.
+        let flow_token = info.login_url.rsplit('/').next().unwrap();
+        assert!(svc.flow_exists(flow_token));
+    }
+
+    #[test]
+    fn test_flow_not_found_for_unknown_token() {
+        let svc = service();
+        assert!(!svc.flow_exists("nonexistent-token"));
+    }
+
+    #[test]
+    fn test_poll_returns_none_before_completion() {
+        let svc = service();
+        let info = svc.initiate("https://cloud.example.com");
+        assert!(svc.poll(&info.poll_token).is_none());
+    }
+
+    #[test]
+    fn test_complete_and_poll_full_sequence() {
+        let svc = service();
+        let info = svc.initiate("https://cloud.example.com");
+        let flow_token = info.login_url.rsplit('/').next().unwrap();
+
+        // Complete the flow.
+        let completed = svc.complete(
+            flow_token,
+            "alice",
+            "https://cloud.example.com",
+            "APP-PASS-12345",
+        );
+        assert!(completed);
+
+        // Poll should return the result exactly once.
+        let result = svc.poll(&info.poll_token).expect("should return result");
+        assert_eq!(result.login_name, "alice");
+        assert_eq!(result.server, "https://cloud.example.com");
+        assert_eq!(result.app_password, "APP-PASS-12345");
+
+        // Second poll should return None (consumed).
+        assert!(svc.poll(&info.poll_token).is_none());
+    }
+
+    #[test]
+    fn test_complete_unknown_flow_returns_false() {
+        let svc = service();
+        assert!(!svc.complete("nonexistent", "alice", "https://x.com", "pass"));
+    }
+
+    #[test]
+    fn test_expired_flows_are_pruned() {
+        let svc = NextcloudLoginFlowService::new(Duration::from_millis(1));
+        let info = svc.initiate("https://cloud.example.com");
+        let flow_token = info.login_url.rsplit('/').next().unwrap();
+
+        // Wait for expiry.
+        std::thread::sleep(Duration::from_millis(10));
+
+        assert!(!svc.flow_exists(flow_token));
+        assert!(svc.poll(&info.poll_token).is_none());
+    }
 }

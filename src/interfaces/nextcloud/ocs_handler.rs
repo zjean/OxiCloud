@@ -1,12 +1,12 @@
+use axum::Json;
 use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use axum::Json;
+use base64::Engine;
 use serde_json::json;
 use std::sync::Arc;
-use base64::Engine;
 
 use crate::common::di::AppState;
 use crate::interfaces::middleware::auth::CurrentUser;
@@ -156,14 +156,19 @@ fn capabilities_payload(state: &AppState, ocs_version: u8) -> serde_json::Value 
 }
 
 fn extract_basic_password(headers: &axum::http::HeaderMap) -> Option<String> {
-    let value = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
+    let value = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
     let mut parts = value.splitn(2, ' ');
     let scheme = parts.next()?.trim();
     let encoded = parts.next()?.trim();
     if !scheme.eq_ignore_ascii_case("Basic") {
         return None;
     }
-    let decoded = base64::engine::general_purpose::STANDARD.decode(encoded).ok()?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
     let decoded = String::from_utf8(decoded).ok()?;
     let (_user, pass) = decoded.split_once(':')?;
     Some(pass.to_string())
