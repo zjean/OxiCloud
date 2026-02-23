@@ -2,7 +2,7 @@ name: GHCR Publish
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/nextcloud-compatible-api]
   workflow_dispatch:
 
 env:
@@ -71,9 +71,10 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=
-            type=raw,value={{date 'YYYY-MM-DD'}}
+            type=raw,value={{date 'YYYY-MM-DD'}},enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=branch
 
       - name: Build and push
         uses: docker/build-push-action@v6
