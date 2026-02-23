@@ -745,7 +745,18 @@ fn write_file_response<W: std::io::Write>(
     write_text_element(xml, "oc:size", &file.size.to_string())?;
     write_text_element(xml, "oc:owner-id", owner)?;
     write_text_element(xml, "oc:owner-display-name", owner)?;
-    write_text_element(xml, "nc:has-preview", "false")?;
+
+    // Check if file is an image that can have previews
+    let has_preview = matches!(
+        file.mime_type.as_str(),
+        "image/jpeg" | "image/jpg" | "image/png" | "image/gif" | "image/webp"
+    );
+    write_text_element(
+        xml,
+        "nc:has-preview",
+        if has_preview { "true" } else { "false" },
+    )?;
+
     write_text_element(xml, "nc:is-encrypted", "0")?;
     write_text_element(xml, "nc:mount-type", "")?;
 

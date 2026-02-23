@@ -304,11 +304,30 @@ impl FileHandler {
                 .into_response();
         }
 
-        let storage_root = state.core.path_service.get_root_path();
-        let file_path = storage_root.join(&file.path);
+        // Get the blob hash for this file
+        let blob_hash = match state
+            .repositories
+            .file_read_repository
+            .get_blob_hash(&id)
+            .await
+        {
+            Ok(hash) => hash,
+            Err(err) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": format!("Failed to get blob hash: {}", err)
+                    })),
+                )
+                    .into_response();
+            }
+        };
+
+        // Get the physical path to the blob file
+        let blob_path = state.core.dedup_service.blob_path(&blob_hash);
 
         match thumbnail_service
-            .get_thumbnail(&id, thumb_size, &file_path)
+            .get_thumbnail(&id, thumb_size, &blob_path)
             .await
         {
             Ok(data) => {

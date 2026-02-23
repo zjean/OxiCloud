@@ -14,6 +14,7 @@ use crate::interfaces::middleware::auth::CurrentUser;
 use crate::interfaces::nextcloud::basic_auth_middleware::basic_auth_middleware;
 use crate::interfaces::nextcloud::login_v2_handler;
 use crate::interfaces::nextcloud::ocs_handler;
+use crate::interfaces::nextcloud::preview_handler;
 use crate::interfaces::nextcloud::status_handler;
 use crate::interfaces::nextcloud::uploads_handler;
 use crate::interfaces::nextcloud::webdav_handler;
@@ -82,6 +83,11 @@ pub fn nextcloud_routes() -> Router<Arc<AppState>> {
         .route(
             "/ocs/v2.php/apps/notifications/api/v2/push",
             post(ocs_handler::handle_notifications_push),
+        )
+        // Preview/thumbnail endpoint
+        .route(
+            "/index.php/core/preview",
+            get(preview_handler::handle_preview),
         )
         // WebDAV files
         .route(
@@ -157,6 +163,10 @@ pub fn nextcloud_routes_with_state(state: Arc<AppState>) -> Router<Arc<AppState>
         .route(
             "/ocs/v2.php/apps/notifications/api/v2/push",
             post(ocs_handler::handle_notifications_push),
+        )
+        .route(
+            "/index.php/core/preview",
+            get(preview_handler::handle_preview),
         )
         .route(
             "/remote.php/dav/files/{user}/{*subpath}",

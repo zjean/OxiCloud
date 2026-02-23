@@ -183,6 +183,13 @@ impl FileReadPort for MockFileRepository {
         unimplemented!()
     }
 
+    async fn get_folder_id_by_path(
+        &self,
+        _folder_path: &str,
+    ) -> std::result::Result<String, DomainError> {
+        unimplemented!()
+    }
+
     async fn get_blob_hash(&self, _file_id: &str) -> std::result::Result<String, DomainError> {
         Ok(String::new())
     }

@@ -1,6 +1,7 @@
 pub mod basic_auth_middleware;
 pub mod login_v2_handler;
 pub mod ocs_handler;
+pub mod preview_handler;
 pub mod routes;
 pub mod status_handler;
 pub mod uploads_handler;

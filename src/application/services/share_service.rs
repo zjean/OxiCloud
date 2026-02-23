@@ -484,6 +484,10 @@ mod tests {
             unimplemented!()
         }
 
+        async fn get_folder_id_by_path(&self, _folder_path: &str) -> Result<String, DomainError> {
+            unimplemented!()
+        }
+
         async fn get_blob_hash(&self, _file_id: &str) -> Result<String, DomainError> {
             Ok(String::new())
         }

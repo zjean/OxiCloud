@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
+    extract::{Path, Query, State},
+    http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Json, Response},
 };
 use serde_json::json;
@@ -19,6 +19,13 @@ pub async fn handle_login_initiate(State(state): State<Arc<AppState>>) -> Respon
     let base_url = state.core.config.base_url();
     let flow = nextcloud.login_flow.initiate(&base_url);
 
+    tracing::info!(
+        base_url = %base_url,
+        login_url = %flow.login_url,
+        poll_endpoint = %flow.poll_endpoint,
+        "Login Flow v2 initiated"
+    );
+
     Json(json!({
         "poll": {
             "token": flow.poll_token,
@@ -29,25 +36,74 @@ pub async fn handle_login_initiate(State(state): State<Arc<AppState>>) -> Respon
     .into_response()
 }
 
-pub async fn handle_login_poll(State(state): State<Arc<AppState>>, body: String) -> Response {
+pub async fn handle_login_poll(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+    body: String,
+) -> Response {
     let nextcloud = match state.nextcloud.as_ref() {
         Some(nextcloud) => nextcloud,
         None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
     };
 
-    let token = match parse_form_value(&body, "token") {
+    let content_type = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("(none)");
+
+    tracing::debug!(
+        body = %body,
+        content_type = %content_type,
+        query_has_token = query.contains_key("token"),
+        "Login Flow v2 poll request"
+    );
+
+    // Try to extract token from multiple sources:
+    // 1. Form-encoded body (token=xxx)
+    // 2. JSON body ({"token": "xxx"})
+    // 3. Query parameter (?token=xxx)
+    let token = parse_form_value(&body, "token")
+        .or_else(|| {
+            serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| v.get("token")?.as_str().map(String::from))
+        })
+        .or_else(|| query.get("token").cloned());
+
+    let token = match token {
         Some(token) => token,
-        None => return StatusCode::BAD_REQUEST.into_response(),
+        None => {
+            tracing::warn!(
+                body = %body,
+                content_type = %content_type,
+                "Login Flow v2 poll: could not extract token from body, JSON, or query"
+            );
+            return StatusCode::BAD_REQUEST.into_response();
+        }
     };
 
     match nextcloud.login_flow.poll(&token) {
-        Some(result) => Json(json!({
-            "server": result.server,
-            "loginName": result.login_name,
-            "appPassword": result.app_password,
-        }))
-        .into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
+        Some(result) => {
+            tracing::info!(
+                login_name = %result.login_name,
+                server = %result.server,
+                "Login Flow v2 poll: returning completed credentials"
+            );
+            Json(json!({
+                "server": result.server,
+                "loginName": result.login_name,
+                "appPassword": result.app_password,
+            }))
+            .into_response()
+        }
+        None => {
+            tracing::debug!(
+                token_prefix = &token[..8.min(token.len())],
+                "Login Flow v2 poll: not yet completed"
+            );
+            StatusCode::NOT_FOUND.into_response()
+        }
     }
 }
 
@@ -64,24 +120,7 @@ pub async fn handle_login_page(
         return StatusCode::NOT_FOUND.into_response();
     }
 
-    Html(format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Login</title>
-</head>
-<body>
-  <h2>Login to OxiCloud</h2>
-  <form method="POST" action="/login/v2/flow/{token}">
-    <label>Username: <input name="user" type="text" required /></label><br />
-    <label>Password: <input name="password" type="password" required /></label><br />
-    <button type="submit">Grant Access</button>
-  </form>
-</body>
-</html>"#
-    ))
-    .into_response()
+    Html(include_str!("../../../static/nextcloud-login.html")).into_response()
 }
 
 pub async fn handle_login_submit(
@@ -128,24 +167,39 @@ pub async fn handle_login_submit(
         .await
     {
         Ok(password) => password,
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, user = %current_user.username, "Login Flow v2: failed to create app password");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
     };
 
     let base_url = state.core.config.base_url();
-    nextcloud
-        .login_flow
-        .complete(&token, &current_user.username, &base_url, &app_password);
+    let completed =
+        nextcloud
+            .login_flow
+            .complete(&token, &current_user.username, &base_url, &app_password);
 
-    Html(
-        "<html><body><h2>Login successful</h2><p>You can close this window and return to the app.</p></body></html>"
-            .to_string(),
-    )
-    .into_response()
+    if completed {
+        tracing::info!(
+            user = %current_user.username,
+            base_url = %base_url,
+            "Login Flow v2: flow completed successfully"
+        );
+    } else {
+        tracing::error!(
+            user = %current_user.username,
+            flow_token_prefix = &token[..8.min(token.len())],
+            "Login Flow v2: complete() returned false — flow token not found"
+        );
+        return axum::response::Redirect::to("/nextcloud-error.html?type=session-expired")
+            .into_response();
+    }
+
+    Html(include_str!("../../../static/nextcloud-success.html")).into_response()
 }
 
 fn login_failed_response(_err: DomainError) -> Response {
-    Html("<html><body><h2>Login failed</h2><p>Invalid credentials.</p></body></html>".to_string())
-        .into_response()
+    axum::response::Redirect::to("/nextcloud-error.html?type=invalid-credentials").into_response()
 }
 
 fn parse_form(body: &str) -> HashMap<String, String> {

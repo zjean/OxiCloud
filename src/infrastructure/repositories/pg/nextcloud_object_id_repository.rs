@@ -36,4 +36,38 @@ impl NextcloudObjectIdRepository {
 
         Ok(row.get::<i64, _>("id"))
     }
+
+    /// Get the OxiCloud object ID from a Nextcloud numeric ID.
+    pub async fn get_object_id(&self, nc_id: i64, object_type: &str) -> Result<String> {
+        let row = sqlx::query(
+            r#"
+            SELECT object_id
+            FROM storage.nextcloud_object_ids
+            WHERE id = $1 AND object_type = $2
+            "#,
+        )
+        .bind(nc_id)
+        .bind(object_type)
+        .fetch_optional(&*self.pool)
+        .await
+        .map_err(|e| {
+            DomainError::new(
+                ErrorKind::DatabaseError,
+                "NextcloudFileId",
+                format!("Failed to lookup Nextcloud ID: {}", e),
+            )
+        })?;
+
+        match row {
+            Some(row) => {
+                let uuid: sqlx::types::Uuid = row.get("object_id");
+                Ok(uuid.to_string())
+            }
+            None => Err(DomainError::new(
+                ErrorKind::NotFound,
+                "NextcloudFileId",
+                format!("No mapping found for Nextcloud ID: {}", nc_id),
+            )),
+        }
+    }
 }

@@ -863,6 +863,10 @@ impl DedupPort for DedupService {
             .map_err(DomainError::from)
     }
 
+    fn blob_path(&self, hash: &str) -> PathBuf {
+        self.blob_path(hash)
+    }
+
     async fn get_stats(&self) -> DedupStatsDto {
         self.get_stats().await
     }

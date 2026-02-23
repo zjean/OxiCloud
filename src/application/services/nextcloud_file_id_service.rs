@@ -38,6 +38,14 @@ impl NextcloudFileIdService {
         repo.get_or_create("folder", folder_id).await
     }
 
+    /// Get the OxiCloud file UUID from a Nextcloud numeric ID.
+    pub async fn get_oxicloud_id(&self, nc_file_id: i64) -> Result<String> {
+        let repo = self.repo.as_ref().ok_or_else(|| {
+            DomainError::internal_error("NextcloudFileId", "Repository not initialized")
+        })?;
+        repo.get_object_id(nc_file_id, "file").await
+    }
+
     pub fn format_oc_id(&self, id: i64) -> String {
         format!("{:08}{}", id, self.instance_id)
     }

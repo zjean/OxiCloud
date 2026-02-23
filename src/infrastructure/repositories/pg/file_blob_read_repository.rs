@@ -352,14 +352,24 @@ impl FileReadPort for FileBlobReadRepository {
             ));
         }
 
+        self.get_folder_id_by_path(&folder_path).await
+    }
+
+    async fn get_folder_id_by_path(&self, folder_path: &str) -> Result<String, DomainError> {
+        let folder_path = folder_path.trim_start_matches('/').trim_end_matches('/');
+
+        if folder_path.is_empty() {
+            return Err(DomainError::not_found("Folder", "empty path"));
+        }
+
         sqlx::query_scalar::<_, String>(
             "SELECT id::text FROM storage.folders WHERE path = $1 AND NOT is_trashed",
         )
-        .bind(&folder_path)
+        .bind(folder_path)
         .fetch_optional(self.pool.as_ref())
         .await
-        .map_err(|e| DomainError::internal_error("FileBlobRead", format!("parent lookup: {e}")))?
-        .ok_or_else(|| DomainError::not_found("Folder", format!("parent for path: {path}")))
+        .map_err(|e| DomainError::internal_error("FileBlobRead", format!("folder lookup: {e}")))?
+        .ok_or_else(|| DomainError::not_found("Folder", format!("path: {folder_path}")))
     }
 
     /// Direct SQL lookup using materialized folder paths.
