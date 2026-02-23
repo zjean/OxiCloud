@@ -389,6 +389,48 @@ impl AuthApplicationService {
         })
     }
 
+    /// Verifies username/password credentials without creating a session.
+    pub async fn verify_credentials(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<crate::application::dtos::user_dto::CurrentUser, DomainError> {
+        let user = self
+            .user_storage
+            .get_user_by_username(username)
+            .await
+            .map_err(|_| {
+                DomainError::new(ErrorKind::AccessDenied, "Auth", "Invalid credentials")
+            })?;
+
+        if !user.is_active() {
+            return Err(DomainError::new(
+                ErrorKind::AccessDenied,
+                "Auth",
+                "Account deactivated",
+            ));
+        }
+
+        let is_valid = self
+            .password_hasher
+            .verify_password(password, user.password_hash())?;
+
+        if !is_valid {
+            return Err(DomainError::new(
+                ErrorKind::AccessDenied,
+                "Auth",
+                "Invalid credentials",
+            ));
+        }
+
+        Ok(crate::application::dtos::user_dto::CurrentUser {
+            id: user.id().to_string(),
+            username: user.username().to_string(),
+            email: user.email().to_string(),
+            role: user.role().to_string(),
+        })
+    }
+
     pub async fn refresh_token(
         &self,
         dto: RefreshTokenDto,

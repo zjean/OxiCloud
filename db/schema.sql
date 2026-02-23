@@ -67,6 +67,20 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 CREATE INDEX IF NOT EXISTS idx_sessions_active ON auth.sessions(user_id, revoked)
 WHERE NOT revoked AND auth.is_session_active(expires_at);
 
+-- App passwords (Nextcloud compatibility)
+CREATE TABLE IF NOT EXISTS auth.app_passwords (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id VARCHAR(36) NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    token_prefix TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_used_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_passwords_user ON auth.app_passwords(user_id);
+CREATE INDEX IF NOT EXISTS idx_app_passwords_prefix ON auth.app_passwords(token_prefix);
+
 -- File ownership tracking
 CREATE TABLE IF NOT EXISTS auth.user_files (
     id SERIAL PRIMARY KEY,
@@ -116,6 +130,7 @@ CREATE INDEX IF NOT EXISTS idx_user_recent_user_accessed ON auth.user_recent_fil
 
 COMMENT ON TABLE auth.users IS 'Stores user account information';
 COMMENT ON TABLE auth.sessions IS 'Stores user session information for refresh tokens';
+COMMENT ON TABLE auth.app_passwords IS 'Stores app passwords for Nextcloud-compatible Basic Auth';
 COMMENT ON TABLE auth.user_files IS 'Tracks file ownership and storage utilization by users';
 COMMENT ON TABLE auth.user_favorites IS 'Stores user favorite files and folders for cross-device synchronization';
 COMMENT ON TABLE auth.user_recent_files IS 'Stores recently accessed files and folders for cross-device synchronization';
@@ -372,6 +387,16 @@ CREATE INDEX IF NOT EXISTS idx_folders_trashed ON storage.folders(user_id, is_tr
 CREATE INDEX IF NOT EXISTS idx_folders_lpath ON storage.folders USING gist (lpath);
 -- B-tree index on path for exact path lookups
 CREATE INDEX IF NOT EXISTS idx_folders_path ON storage.folders (path text_pattern_ops);
+
+-- Nextcloud object ID mapping (stable numeric fileids)
+CREATE TABLE IF NOT EXISTS storage.nextcloud_object_ids (
+    id BIGSERIAL PRIMARY KEY,
+    object_type TEXT NOT NULL CHECK (object_type IN ('file', 'folder')),
+    object_id UUID NOT NULL,
+    UNIQUE (object_type, object_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_nc_object_ids_type ON storage.nextcloud_object_ids(object_type);
 
 -- ── ltree trigger: compute path & lpath on INSERT or UPDATE of name/parent_id ──
 CREATE OR REPLACE FUNCTION storage.compute_folder_path()

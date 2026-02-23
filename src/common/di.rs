@@ -26,6 +26,9 @@ use crate::application::ports::zip_ports::ZipPort;
 use crate::application::services::favorites_service::FavoritesService;
 use crate::application::services::folder_service::FolderService;
 use crate::application::services::i18n_application_service::I18nApplicationService;
+use crate::application::services::nextcloud_app_password_service::NextcloudAppPasswordService;
+use crate::application::services::nextcloud_file_id_service::NextcloudFileIdService;
+use crate::application::services::nextcloud_login_flow_service::NextcloudLoginFlowService;
 use crate::application::services::recent_service::RecentService;
 use crate::application::services::search_service::SearchService;
 use crate::application::services::share_service::ShareService;
@@ -44,6 +47,7 @@ use crate::infrastructure::services::file_content_cache::{
     FileContentCache, FileContentCacheConfig,
 };
 use crate::infrastructure::services::file_system_i18n_service::FileSystemI18nService;
+use crate::infrastructure::services::nextcloud_chunked_upload_service::NextcloudChunkedUploadService;
 use crate::infrastructure::services::path_service::PathService;
 use crate::infrastructure::services::trash_cleanup_service::TrashCleanupService;
 
@@ -461,6 +465,7 @@ impl AppServiceFactory {
             Arc<dyn crate::application::ports::storage_ports::StorageUsagePort>,
         >;
         let mut auth_services: Option<crate::common::di::AuthServices> = None;
+        let mut nextcloud_services: Option<NextcloudServices> = None;
 
         {
             let favs = self.create_favorites_service(&pool);
@@ -505,6 +510,51 @@ impl AppServiceFactory {
             }
         }
 
+        // Nextcloud compatibility services
+        if self.config.nextcloud.enabled {
+            if !self.config.features.enable_auth {
+                tracing::warn!(
+                    "Nextcloud compatibility enabled but auth is disabled; Nextcloud routes will be unusable"
+                );
+            }
+
+            let app_password_repo = Arc::new(
+                crate::infrastructure::repositories::pg::AppPasswordRepository::new(pool.clone()),
+            );
+            let user_repo: Arc<dyn crate::application::ports::auth_ports::UserStoragePort> =
+                Arc::new(crate::infrastructure::repositories::pg::UserPgRepository::new(
+                    pool.clone(),
+                ));
+            let hasher: Arc<dyn crate::application::ports::auth_ports::PasswordHasherPort> =
+                Arc::new(crate::infrastructure::services::password_hasher::Argon2PasswordHasher::new());
+
+            let app_passwords = Arc::new(NextcloudAppPasswordService::new(
+                app_password_repo,
+                hasher,
+                user_repo,
+            ));
+
+            let chunk_base = self.storage_path.join(".uploads/nextcloud");
+            let chunked_uploads = Arc::new(NextcloudChunkedUploadService::new(chunk_base));
+
+            let file_id_repo = Arc::new(
+                crate::infrastructure::repositories::pg::NextcloudObjectIdRepository::new(
+                    pool.clone(),
+                ),
+            );
+            let file_ids = Arc::new(NextcloudFileIdService::new(
+                file_id_repo,
+                self.config.nextcloud.instance_id.clone(),
+            ));
+
+            nextcloud_services = Some(NextcloudServices {
+                login_flow: Arc::new(NextcloudLoginFlowService::new_stub()),
+                app_passwords,
+                file_ids,
+                chunked_uploads,
+            });
+        }
+
         // 7. Preload translations
         self.preload_translations(&apps.i18n_service).await;
 
@@ -526,6 +576,7 @@ impl AppServiceFactory {
             db_pool: Some(pool.clone()),
             maintenance_pool: Some(maintenance_pool),
             auth_service: auth_services,
+            nextcloud: nextcloud_services,
             admin_settings_service: None,
             trash_service,
             share_service,
@@ -752,6 +803,26 @@ pub struct AuthServices {
     pub auth_application_service: Arc<AuthApplicationService>,
 }
 
+/// Container for Nextcloud compatibility services
+#[derive(Clone)]
+pub struct NextcloudServices {
+    pub login_flow: Arc<NextcloudLoginFlowService>,
+    pub app_passwords: Arc<NextcloudAppPasswordService>,
+    pub file_ids: Arc<NextcloudFileIdService>,
+    pub chunked_uploads: Arc<NextcloudChunkedUploadService>,
+}
+
+impl NextcloudServices {
+    pub fn stub() -> Self {
+        Self {
+            login_flow: Arc::new(NextcloudLoginFlowService::new_stub()),
+            app_passwords: Arc::new(NextcloudAppPasswordService::new_stub()),
+            file_ids: Arc::new(NextcloudFileIdService::new_stub()),
+            chunked_uploads: Arc::new(NextcloudChunkedUploadService::new_stub()),
+        }
+    }
+}
+
 /// Global application state for dependency injection
 #[derive(Clone)]
 pub struct AppState {
@@ -762,6 +833,7 @@ pub struct AppState {
     /// Isolated pool for background / batch operations.
     pub maintenance_pool: Option<Arc<PgPool>>,
     pub auth_service: Option<AuthServices>,
+    pub nextcloud: Option<NextcloudServices>,
     pub admin_settings_service: Option<Arc<AdminSettingsService>>,
     pub trash_service: Option<Arc<dyn TrashUseCase>>,
     pub share_service: Option<Arc<dyn crate::application::ports::share_ports::ShareUseCase>>,

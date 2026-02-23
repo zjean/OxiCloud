@@ -396,6 +396,24 @@ impl Default for WopiConfig {
     }
 }
 
+/// Nextcloud compatibility configuration
+#[derive(Debug, Clone)]
+pub struct NextcloudConfig {
+    /// Whether the Nextcloud compatibility layer is enabled
+    pub enabled: bool,
+    /// Instance ID suffix for oc:id formatting (e.g., "ocnca")
+    pub instance_id: String,
+}
+
+impl Default for NextcloudConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            instance_id: "ocnca".to_string(),
+        }
+    }
+}
+
 /// Feature configuration (feature flags)
 #[derive(Debug, Clone)]
 pub struct FeaturesConfig {
@@ -449,6 +467,8 @@ pub struct AppConfig {
     pub oidc: OidcConfig,
     /// WOPI configuration
     pub wopi: WopiConfig,
+    /// Nextcloud compatibility configuration
+    pub nextcloud: NextcloudConfig,
 }
 
 impl Default for AppConfig {
@@ -468,6 +488,7 @@ impl Default for AppConfig {
             features: FeaturesConfig::default(),
             oidc: OidcConfig::default(),
             wopi: WopiConfig::default(),
+            nextcloud: NextcloudConfig::default(),
         }
     }
 }
@@ -693,6 +714,16 @@ impl AppConfig {
         if config.wopi.enabled && config.wopi.secret.is_empty() {
             config.wopi.secret = config.auth.jwt_secret.clone();
             tracing::info!("WOPI secret not set, falling back to JWT secret");
+        }
+
+        // Nextcloud compatibility configuration
+        if let Ok(v) = env::var("OXICLOUD_NEXTCLOUD_ENABLED") {
+            config.nextcloud.enabled = v.parse::<bool>().unwrap_or(false);
+        }
+        if let Ok(v) = env::var("OXICLOUD_NEXTCLOUD_INSTANCE_ID") {
+            if !v.trim().is_empty() {
+                config.nextcloud.instance_id = v.trim().to_string();
+            }
         }
 
         config

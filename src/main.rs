@@ -150,6 +150,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
+    // Build Nextcloud routes if enabled
+    let nextcloud_router = if config.nextcloud.enabled {
+        use oxicloud::interfaces::nextcloud::routes::nextcloud_routes_with_state;
+        let nc_state = Arc::new(app_state.clone());
+        Some(nextcloud_routes_with_state(nc_state))
+        } else {
+        None
+    };
+
     // Apply auth middleware to protected API routes when auth is enabled
     if config.features.enable_auth {
         // SECURITY: if auth is required, auth_service MUST be present at this
@@ -201,6 +210,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .merge(web_routes)
             .layer(TraceLayer::new_for_http());
 
+        // Mount Nextcloud routes (uses its own Basic Auth middleware)
+        if let Some(nc_router) = nextcloud_router {
+            app = app.merge(nc_router.with_state(Arc::new(app_state.clone())));
+        }
+
         // Mount WOPI routes (protocol routes use own token auth, API routes behind auth middleware)
         if let Some((wopi_protocol, wopi_api)) = wopi_routes {
             let wopi_api_protected = wopi_api.layer(axum::middleware::from_fn_with_state(
@@ -223,6 +237,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .merge(webdav_router)
             .merge(web_routes)
             .layer(TraceLayer::new_for_http());
+
+        // Mount Nextcloud routes
+        if let Some(nc_router) = nextcloud_router {
+            app = app.merge(nc_router.with_state(Arc::new(app_state.clone())));
+        }
 
         // Mount WOPI routes (no auth middleware when auth is disabled)
         if let Some((wopi_protocol, wopi_api)) = wopi_routes {
