@@ -52,8 +52,20 @@
                     >
                 </div>
                 
-                <button type="submit" class="auth-button">Grant Access</button>
+                <button type="submit" class="auth-button" id="password-submit">Grant Access</button>
             </form>
+
+            <!-- OIDC/SSO login — shown only when OIDC is enabled -->
+            <div id="oidc-section" style="display: none;">
+                <div style="display: flex; align-items: center; gap: 12px; margin: 16px 0;">
+                    <hr style="flex: 1; border: none; border-top: 1px solid #e5e7eb;">
+                    <span style="color: #9ca3af; font-size: 13px;">or</span>
+                    <hr style="flex: 1; border: none; border-top: 1px solid #e5e7eb;">
+                </div>
+                <button type="button" id="oidc-button" class="auth-button" style="background: #4f46e5;">
+                    Sign in with SSO
+                </button>
+            </div>
         </div>
     </div>
     
@@ -62,6 +74,36 @@
         const pathParts = window.location.pathname.split('/');
         const token = pathParts[pathParts.length - 1];
         document.getElementById('login-flow-form').action = `/login/v2/flow/${token}`;
+
+        // Check if OIDC is available and configure SSO button
+        (async function() {
+            try {
+                const resp = await fetch('/api/auth/oidc/providers');
+                if (!resp.ok) return;
+                const info = await resp.json();
+                if (!info.enabled) return;
+
+                // Show OIDC section
+                const section = document.getElementById('oidc-section');
+                section.style.display = 'block';
+
+                // Update button text with provider name
+                const btn = document.getElementById('oidc-button');
+                btn.textContent = `Sign in with ${info.provider_name || 'SSO'}`;
+
+                // If password login is disabled, hide the password form
+                if (!info.password_login_enabled) {
+                    document.getElementById('login-flow-form').style.display = 'none';
+                }
+
+                // SSO button redirects to the OIDC flow for this NC token
+                btn.addEventListener('click', () => {
+                    window.location.href = `/login/v2/flow/${token}/oidc`;
+                });
+            } catch(e) {
+                // OIDC not available — silently keep password-only mode
+            }
+        })();
     </script>
 </body>
 </html>

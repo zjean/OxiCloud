@@ -11,6 +11,7 @@ use crate::application::dtos::user_dto::{
     ChangePasswordDto, LoginDto, OidcCallbackQueryDto, OidcExchangeDto, OidcProviderInfoDto,
     RefreshTokenDto, RegisterDto,
 };
+use crate::application::services::auth_application_service::OidcCallbackResult;
 use crate::common::di::AppState;
 use crate::interfaces::errors::AppError;
 
@@ -429,7 +430,7 @@ async fn oidc_callback(
     tracing::info!("OIDC callback received with code");
 
     // Exchange code, validate state/nonce/PKCE, authenticate user
-    let exchange_code = auth_app
+    let result = auth_app
         .oidc_callback(&query.code, &query.state)
         .await
         .map_err(|e| {
@@ -437,14 +438,58 @@ async fn oidc_callback(
             AppError::from(e)
         })?;
 
-    // Redirect to frontend with one-time exchange code (NOT raw tokens)
-    let config = auth_app.oidc_config().unwrap();
-    let frontend_url = config.frontend_url.trim_end_matches('/');
-    let redirect_url = format!("{}/?oidc_code={}", frontend_url, exchange_code,);
+    match result {
+        OidcCallbackResult::WebLogin { exchange_code } => {
+            // Regular web login — redirect to frontend with exchange code
+            let config = auth_app.oidc_config().unwrap();
+            let frontend_url = config.frontend_url.trim_end_matches('/');
+            let redirect_url = format!("{}/?oidc_code={}", frontend_url, exchange_code);
+            tracing::info!("OIDC login successful, redirecting with exchange code");
+            Ok(Redirect::temporary(&redirect_url))
+        }
+        OidcCallbackResult::NextcloudLogin {
+            nc_flow_token,
+            user_id,
+            username,
+        } => {
+            // Nextcloud Login Flow v2 — create app password and complete flow
+            let nextcloud = state
+                .nextcloud
+                .as_ref()
+                .ok_or_else(|| AppError::internal_error("Nextcloud services not configured"))?;
 
-    tracing::info!("OIDC login successful, redirecting with exchange code");
+            let app_password = nextcloud
+                .app_passwords
+                .create(&user_id, "Nextcloud (OIDC)")
+                .await
+                .map_err(|e| {
+                    tracing::error!(error = %e, user = %username, "OIDC+NC: failed to create app password");
+                    AppError::from(e)
+                })?;
 
-    Ok(Redirect::temporary(&redirect_url))
+            let base_url = state.core.config.base_url();
+            let completed =
+                nextcloud
+                    .login_flow
+                    .complete(&nc_flow_token, &username, &base_url, &app_password);
+
+            if completed {
+                tracing::info!(
+                    user = %username,
+                    "OIDC login completed Nextcloud Login Flow v2 successfully"
+                );
+                Ok(Redirect::temporary("/nextcloud-success.html"))
+            } else {
+                tracing::error!(
+                    user = %username,
+                    "OIDC+NC: login flow token expired or not found"
+                );
+                Ok(Redirect::temporary(
+                    "/nextcloud-error.html?type=session-expired",
+                ))
+            }
+        }
+    }
 }
 
 /// POST /api/auth/oidc/exchange — Exchange one-time code for auth tokens

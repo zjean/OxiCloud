@@ -198,6 +198,58 @@ pub async fn handle_login_submit(
     Html(include_str!("../../../static/nextcloud-success.html")).into_response()
 }
 
+/// GET /login/v2/flow/{token}/oidc — Start an OIDC authorization flow that is
+/// tied to a Nextcloud Login Flow v2 session.  After successful IdP
+/// authentication the regular `/api/auth/oidc/callback` endpoint will detect
+/// the NC flow token and complete the Nextcloud login instead of issuing
+/// internal JWTs.
+pub async fn handle_login_oidc(
+    State(state): State<Arc<AppState>>,
+    Path(token): Path<String>,
+) -> Response {
+    // Verify Nextcloud services are configured
+    let nextcloud = match state.nextcloud.as_ref() {
+        Some(nc) => nc,
+        None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+
+    // Verify the NC login flow token exists
+    if !nextcloud.login_flow.flow_exists(&token) {
+        return axum::response::Redirect::to("/nextcloud-error.html?type=session-expired")
+            .into_response();
+    }
+
+    // Verify auth + OIDC are configured and enabled
+    let auth = match state.auth_service.as_ref() {
+        Some(auth) => auth,
+        None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+
+    if !auth.auth_application_service.oidc_enabled() {
+        tracing::warn!("OIDC login requested on NC login page but OIDC is not enabled");
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    // Prepare an OIDC authorize flow that carries the NC flow token
+    match auth
+        .auth_application_service
+        .prepare_oidc_authorize_for_nextcloud(&token)
+        .await
+    {
+        Ok(authorize_url) => {
+            tracing::info!(
+                nc_flow_token_prefix = &token[..8.min(token.len())],
+                "OIDC authorize redirect for Nextcloud Login Flow v2"
+            );
+            axum::response::Redirect::temporary(&authorize_url).into_response()
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to prepare OIDC authorize for NC login");
+            StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        }
+    }
+}
+
 fn login_failed_response(_err: DomainError) -> Response {
     axum::response::Redirect::to("/nextcloud-error.html?type=invalid-credentials").into_response()
 }

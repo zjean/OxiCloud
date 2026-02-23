@@ -26,6 +26,7 @@ use crate::interfaces::nextcloud::webdav_handler;
 ///   - POST /index.php/login/v2
 ///   - GET  /login/v2/flow/{token}
 ///   - POST /login/v2/flow/{token}
+///   - GET  /login/v2/flow/{token}/oidc  (OIDC initiation for NC login)
 ///   - POST /login/v2/poll (alias for /index.php/login/v2/poll)
 ///
 /// Protected routes (Basic Auth via app passwords):
@@ -50,6 +51,11 @@ pub fn nextcloud_routes() -> Router<Arc<AppState>> {
         .route(
             "/login/v2/flow/{token}",
             get(login_v2_handler::handle_login_page).post(login_v2_handler::handle_login_submit),
+        )
+        // OIDC initiation from Nextcloud login page
+        .route(
+            "/login/v2/flow/{token}/oidc",
+            get(login_v2_handler::handle_login_oidc),
         )
         .route(
             "/index.php/login/v2/poll",
@@ -134,6 +140,11 @@ pub fn nextcloud_routes_with_state(state: Arc<AppState>) -> Router<Arc<AppState>
         .route(
             "/login/v2/flow/{token}",
             get(login_v2_handler::handle_login_page).post(login_v2_handler::handle_login_submit),
+        )
+        // OIDC initiation from Nextcloud login page
+        .route(
+            "/login/v2/flow/{token}/oidc",
+            get(login_v2_handler::handle_login_oidc),
         )
         .route(
             "/index.php/login/v2/poll",
