@@ -135,7 +135,7 @@ fn capabilities_payload(state: &AppState, ocs_version: u8) -> serde_json::Value 
                         "supportedTypes": ["SHA1", "MD5"]
                     },
                     "theming": {
-                        "name": "Nextcloud",
+                        "name": "OxiCloud",
                         "url": base_url,
                         "logo": format!("{}/logo.png", base_url),
                         "color": "#0082c9",

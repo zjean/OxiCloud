@@ -9,7 +9,7 @@ pub async fn handle_status() -> Response {
         "needsDbUpgrade": false,
         "version": "28.0.4.1",
         "versionstring": "28.0.4",
-        "productname": "Nextcloud",
+        "productname": "OxiCloud",
         "edition": ""
     }))
     .into_response()
