@@ -2,15 +2,21 @@ name: Docker Build and Test
 
 on:
   push:
-    branches: [ "main", "dev" ]
+    branches: [ "main", "dev", "personal/develop" ]
   pull_request:
     branches: [ "main", "dev" ]
+
+env:
+  GHCR_IMAGE: ghcr.io/zjean/oxicloud
 
 jobs:
   build-and-test:
     name: Build and Test Docker Image
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout code
@@ -19,33 +25,51 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Login to GHCR
+        if: github.ref == 'refs/heads/personal/develop' && github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: test/oxicloud
+          images: ${{ env.GHCR_IMAGE }}
           tags: |
             type=ref,event=branch
-            type=ref,event=pr
             type=sha
 
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: false
-          load: true
-          tags: test/oxicloud:test
+          push: ${{ github.ref == 'refs/heads/personal/develop' && github.event_name == 'push' }}
+          load: ${{ !(github.ref == 'refs/heads/personal/develop' && github.event_name == 'push') }}
+          tags: |
+            ${{ steps.meta.outputs.tags }}
+            ${{ env.GHCR_IMAGE }}:dev
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Verify image starts correctly
+        if: "!cancelled()"
         run: |
+          # Use local image for non-push builds, pulled image otherwise
+          IMAGE="${{ env.GHCR_IMAGE }}:dev"
+          if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+            IMAGE="test/oxicloud:test"
+            docker tag $(docker images -q | head -1) "$IMAGE" 2>/dev/null || true
+          fi
+
           # Start the container in background
           docker run -d --name oxicloud-test \
             -e DATABASE_URL="postgres://test:test@localhost/test" \
             -p 8080:8080 \
-            test/oxicloud:test || true
+            "$IMAGE" || true
 
           # Give it a moment to start (or fail)
           sleep 3
@@ -60,17 +84,23 @@ jobs:
           docker rm -f oxicloud-test || true
 
       - name: Verify image structure
+        if: "!cancelled()"
         run: |
+          IMAGE="${{ env.GHCR_IMAGE }}:dev"
+          if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+            IMAGE=$(docker images --format '{{.Repository}}:{{.Tag}}' | head -1)
+          fi
+
           echo "=== Image size ==="
-          docker image ls test/oxicloud:test
+          docker image ls "$IMAGE"
 
           echo "=== Binary exists and is executable ==="
-          docker run --rm --entrypoint sh test/oxicloud:test -c "test -x /usr/local/bin/oxicloud && echo 'OK: binary is executable'"
+          docker run --rm --entrypoint sh "$IMAGE" -c "test -x /usr/local/bin/oxicloud && echo 'OK: binary is executable'"
 
           echo "=== Static files present ==="
-          docker run --rm --entrypoint sh test/oxicloud:test -c "ls /app/static/index.html && echo 'OK: static files present'"
+          docker run --rm --entrypoint sh "$IMAGE" -c "ls /app/static/index.html && echo 'OK: static files present'"
 
           echo "=== DB schema present ==="
-          docker run --rm --entrypoint sh test/oxicloud:test -c "ls /app/db/schema.sql && echo 'OK: schema present'"
+          docker run --rm --entrypoint sh "$IMAGE" -c "ls /app/db/schema.sql && echo 'OK: schema present'"
 
           echo "✅ Docker build and test completed successfully"
